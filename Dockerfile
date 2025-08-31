@@ -33,7 +33,7 @@ WORKDIR /app
 COPY bin /app/bin
 
 # 安装 UniVPN 客户端（仍需 root 权限）
-RUN /app/bin/univpn-linux-*.run
+RUN chmod +x /app/bin/univpn-linux-*.run && sudo /app/bin/univpn-linux-*.run
 
 # 复制启动脚本（在用户创建之后，切换之前）
 COPY entrypoint.sh /app/entrypoint.sh
