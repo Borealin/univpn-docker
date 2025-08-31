@@ -40,7 +40,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: docker.io/${{ github.repository_owner }}/univpn-docker
+          images: docker.io/borealin/univpn-docker
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -66,7 +66,7 @@ jobs:
     if: github.event_name != 'pull_request'
     # 使用构建的镜像作为 job container 进行测试
     container:
-      image: docker.io/${{ github.repository_owner }}/univpn-docker:${{ github.ref_name }}
+      image: docker.io/borealin/univpn-docker:${{ github.ref_name }}
       env:
         UNIVPN_SERVER: ${{ secrets.UNIVPN_SERVER }}
         UNIVPN_USERNAME: ${{ secrets.UNIVPN_USERNAME }}
@@ -102,7 +102,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: docker.io/${{ github.repository_owner }}/univpn-docker:${{ github.ref_name }}
+          image-ref: docker.io/borealin/univpn-docker:${{ github.ref_name }}
           format: 'sarif'
           output: 'trivy-results.sarif'
       
