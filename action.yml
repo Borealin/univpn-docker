@@ -1,0 +1,47 @@
+name: 'Connect to UniVPN'
+description: 'Connect to UniVPN environment during GitHub Actions workflow execution'
+author: 'connect-univpn-action'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  server:
+    description: 'UniVPN server address'
+    required: true
+  username:
+    description: 'UniVPN username'
+    required: true
+  password:
+    description: 'UniVPN password'
+    required: true
+  port:
+    description: 'UniVPN server port'
+    required: false
+    default: '443'
+  timeout:
+    description: 'Connection timeout in seconds'
+    required: false
+    default: '30'
+  disconnect-on-failure:
+    description: 'Whether to disconnect VPN on workflow failure'
+    required: false
+    default: 'true'
+
+outputs:
+  connection-status:
+    description: 'VPN connection status'
+  ip-address:
+    description: 'Assigned VPN IP address'
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  env:
+    UNIVPN_SERVER: ${{ inputs.server }}
+    UNIVPN_USERNAME: ${{ inputs.username }}
+    UNIVPN_PASSWORD: ${{ inputs.password }}
+    UNIVPN_PORT: ${{ inputs.port }}
+    UNIVPN_TIMEOUT: ${{ inputs.timeout }}
+    DISCONNECT_ON_FAILURE: ${{ inputs.disconnect-on-failure }}

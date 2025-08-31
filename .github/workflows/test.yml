@@ -1,0 +1,38 @@
+name: Test UniVPN Action
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test-action:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Test UniVPN Action
+        id: vpn-test
+        uses: ./
+        with:
+          server: ${{ secrets.UNIVPN_SERVER }}
+          username: ${{ secrets.UNIVPN_USERNAME }}
+          password: ${{ secrets.UNIVPN_PASSWORD }}
+          port: ${{ secrets.UNIVPN_PORT || '443' }}
+          timeout: '60'
+        continue-on-error: true
+      
+      - name: Display connection results
+        run: |
+          echo "Connection Status: ${{ steps.vpn-test.outputs.connection-status }}"
+          echo "VPN IP Address: ${{ steps.vpn-test.outputs.ip-address }}"
+      
+      - name: Test network connectivity (if connected)
+        if: steps.vpn-test.outputs.connection-status == 'connected'
+        run: |
+          echo "Testing network connectivity through VPN..."
+          curl -s https://ipinfo.io/ip || echo "External IP check failed"
+          ping -c 3 8.8.8.8 || echo "Ping test failed"
