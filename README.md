@@ -1,18 +1,19 @@
-# Connect UniVPN GitHub Action
+# UniVPN Docker
 
-一个 GitHub Action，用于在工作流执行过程中连接到 UniVPN 环境，实现网络环境的切换。
+一个 Docker 镜像，用于在 GitHub Actions 工作流中提供 UniVPN 网络环境。支持作为 job container 使用，让整个工作流通过 UniVPN 网络运行。
 
 ## 功能特性
 
-- 🔒 在 GitHub Actions 工作流中建立 UniVPN 连接
-- 🌐 自动配置网络路由和环境
-- 📊 提供连接状态和 IP 地址输出
-- ⚙️ 支持自定义连接参数和超时设置
+- 🐳 提供预配置 UniVPN 环境的 Docker 镜像
+- 🔒 在 GitHub Actions job container 中建立 UniVPN 连接
+- 🌐 整个工作流通过 UniVPN 网络运行
+- ⚙️ 支持自定义连接参数和端口设置
+- 🔄 自动重连和连接监控
 - 🛡️ 自动处理连接失败和清理
 
 ## 使用方法
 
-### 基本用法
+### 作为 Job Container（推荐）
 
 ```yaml
 name: Test with UniVPN
@@ -21,20 +22,26 @@ on: [push]
 jobs:
   test-with-vpn:
     runs-on: ubuntu-latest
+    # 使用 UniVPN Docker 镜像作为 job container
+    container:
+      image: your-username/univpn-docker:latest
+      env:
+        UNIVPN_SERVER: ${{ secrets.UNIVPN_SERVER }}
+        UNIVPN_USERNAME: ${{ secrets.UNIVPN_USERNAME }}
+        UNIVPN_PASSWORD: ${{ secrets.UNIVPN_PASSWORD }}
+        UNIVPN_PORT: ${{ secrets.UNIVPN_PORT || '443' }}
+      options: >-
+        --privileged
+        --cap-add=NET_ADMIN
+        --cap-add=SYS_MODULE
+        --device=/dev/net/tun
+        --sysctl net.ipv6.conf.all.disable_ipv6=0
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Connect to UniVPN
-        uses: ./
-        with:
-          server: ${{ secrets.UNIVPN_SERVER }}
-          username: ${{ secrets.UNIVPN_USERNAME }}
-          password: ${{ secrets.UNIVPN_PASSWORD }}
-          port: '9999'  # 可选，默认 443
-          timeout: '60'  # 可选，默认 30 秒
-      
-      - name: Test network connectivity
+      - name: Test VPN connectivity
         run: |
           echo "Testing connectivity through VPN..."
           curl -s https://ipinfo.io/ip
@@ -42,63 +49,75 @@ jobs:
       
       - name: Run your tests
         run: |
-          # 你的测试命令
+          # 所有命令都通过 VPN 网络执行
+          npm install
           npm test
-```
-
-### 高级用法
-
-```yaml
-name: Deploy with UniVPN
-on: [push]
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      
-      - name: Connect to UniVPN
-        id: vpn
-        uses: ./
-        with:
-          server: ${{ secrets.UNIVPN_SERVER }}
-          username: ${{ secrets.UNIVPN_USERNAME }}
-          password: ${{ secrets.UNIVPN_PASSWORD }}
-          port: '9999'  # 如果不是默认端口
-          timeout: '120'
-          disconnect-on-failure: 'true'
-      
-      - name: Verify VPN connection
-        run: |
-          echo "Connection Status: ${{ steps.vpn.outputs.connection-status }}"
-          echo "VPN IP Address: ${{ steps.vpn.outputs.ip-address }}"
       
       - name: Deploy to internal server
-        if: steps.vpn.outputs.connection-status == 'connected'
         run: |
           # 部署到内网服务器
-          scp -o StrictHostKeyChecking=no ./dist/* user@internal.server:/var/www/
+          scp ./dist/* user@internal.server:/var/www/
 ```
 
-## 输入参数
+### 直接运行 Docker 容器
 
-| 参数 | 描述 | 必需 | 默认值 |
+```bash
+# 本地测试
+docker run --rm -it \
+  --privileged \
+  --cap-add=NET_ADMIN \
+  --cap-add=SYS_MODULE \
+  --device=/dev/net/tun \
+  --sysctl net.ipv6.conf.all.disable_ipv6=0 \
+  -e UNIVPN_SERVER=vpn.example.com \
+  -e UNIVPN_USERNAME=myuser \
+  -e UNIVPN_PASSWORD=mypass \
+  -e UNIVPN_PORT=9999 \
+  your-username/univpn-docker:latest
+
+# 在容器内执行命令
+docker exec -it <container_id> bash
+curl https://ipinfo.io/ip  # 显示 VPN IP
+```
+
+## 镜像发布
+
+### 自动发布
+
+每次推送到 `main` 分支或创建 Release 时，GitHub Actions 会自动构建并发布 Docker 镜像到 Docker Hub。
+
+- **最新版本**: `your-username/univpn-docker:latest`
+- **分支版本**: `your-username/univpn-docker:main`
+- **标签版本**: `your-username/univpn-docker:v1.0.0`
+
+### 手动构建
+
+```bash
+# 构建镜像
+docker build -t univpn-docker:local .
+
+# 运行测试（完整权限）
+docker run --rm -it \
+  --privileged \
+  --cap-add=NET_ADMIN \
+  --cap-add=SYS_MODULE \
+  --device=/dev/net/tun \
+  --sysctl net.ipv6.conf.all.disable_ipv6=0 \
+  -e UNIVPN_SERVER=your.vpn.server \
+  -e UNIVPN_USERNAME=username \
+  -e UNIVPN_PASSWORD=password \
+  univpn-docker:local
+```
+
+## 环境变量
+
+| 变量 | 描述 | 必需 | 默认值 |
 |------|------|------|--------|
-| `server` | UniVPN 服务器地址 | ✅ | - |
-| `username` | UniVPN 用户名 | ✅ | - |
-| `password` | UniVPN 密码 | ✅ | - |
-| `port` | UniVPN 服务器端口 | ❌ | '443' |
-| `timeout` | 连接超时时间（秒） | ❌ | '30' |
-| `disconnect-on-failure` | 工作流失败时是否断开 VPN | ❌ | 'true' |
-
-## 输出参数
-
-| 参数 | 描述 |
-|------|------|
-| `connection-status` | VPN 连接状态（'connected' 或 'failed'） |
-| `ip-address` | 分配的 VPN IP 地址 |
+| `UNIVPN_SERVER` | UniVPN 服务器地址 | ✅ | - |
+| `UNIVPN_USERNAME` | UniVPN 用户名 | ✅ | - |
+| `UNIVPN_PASSWORD` | UniVPN 密码 | ✅ | - |
+| `UNIVPN_PORT` | UniVPN 服务器端口 | ❌ | '443' |
+| `UNIVPN_TIMEOUT` | 连接超时时间（秒） | ❌ | '30' |
 
 ## 环境要求
 
@@ -118,11 +137,36 @@ mkdir -p bin
 
 ### GitHub Secrets
 
-建议将敏感信息存储在 GitHub Secrets 中：
+在 GitHub Actions 中使用时，建议将敏感信息存储在 GitHub Secrets 中：
 
 - `UNIVPN_SERVER`: VPN 服务器地址
 - `UNIVPN_USERNAME`: VPN 用户名
 - `UNIVPN_PASSWORD`: VPN 密码
+- `UNIVPN_PORT`: VPN 端口（可选）
+
+### Docker Hub 设置
+
+如果你要发布到 Docker Hub，需要在 GitHub Secrets 中设置：
+
+- `DOCKER_USERNAME`: 你的 Docker Hub 用户名
+- `DOCKER_PASSWORD`: 你的 Docker Hub 访问令牌（推荐）或密码
+
+### 本地开发
+
+本地使用 Docker Compose：
+
+```bash
+# 复制环境变量模板
+cp env.example .env
+# 编辑 .env 文件，填入真实的 VPN 配置
+
+# 启动容器
+docker-compose up -d
+
+# 进入容器测试
+docker-compose exec univpn bash
+curl https://ipinfo.io/ip
+```
 
 ## 工作原理
 
@@ -131,8 +175,9 @@ mkdir -p bin
 3. **命令行交互**: 直接使用 UniVPN 的命令行工具 `UniVPNCS`
 4. **交互自动化**: 使用 expect 脚本自动化 UniVPN 客户端的交互流程
 5. **连接管理**: 自动创建连接配置、登录并建立 VPN 连接
-6. **状态监控**: 持续监控 VPN 连接状态，支持自动重连
-7. **自动清理**: 工作流结束时自动断开连接并清理配置
+6. **网络接口**: 创建 `cnem_vnic` 虚拟网络接口，提供完整的网络隧道
+7. **状态监控**: 持续监控 VPN 连接状态，支持自动重连
+8. **自动清理**: 工作流结束时自动断开连接并清理配置
 
 ## 故障排除
 
@@ -144,13 +189,28 @@ mkdir -p bin
    ```
    解决方案：确保 UniVPN 安装包（.run 文件）正确放置在 `bin/` 目录下
 
-2. **连接超时**
+2. **网络扩展失败**
+   ```
+   Failed to enable network extension
+   ```
+   解决方案：确保运行时包含所有必需的权限和设备：
+   ```bash
+   docker run \
+     --privileged \
+     --cap-add=NET_ADMIN \
+     --cap-add=SYS_MODULE \
+     --device=/dev/net/tun \
+     --sysctl net.ipv6.conf.all.disable_ipv6=0 \
+     your-image
+   ```
+
+3. **连接超时**
    ```
    Timeout waiting for VPN connection
    ```
    解决方案：增加 `timeout` 参数值或检查服务器配置
 
-3. **认证失败**
+4. **认证失败**
    ```
    Failed to establish VPN connection
    ```

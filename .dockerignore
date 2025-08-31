@@ -6,13 +6,18 @@
 README.md
 *.md
 
-# GitHub
-.github
+# Action 相关文件（已废弃）
+action.yml.backup
+*-example.yml
+
+# GitHub (保留 workflows 用于测试)
+# .github
 
 # Docker
-Dockerfile
 .dockerignore
 docker-compose.yml
+env.example
+.env
 
 # Logs
 *.log

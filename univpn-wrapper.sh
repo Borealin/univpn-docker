@@ -2,6 +2,10 @@
 
 set -e
 
+# 设置编码支持中文
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+
 # UniVPN 自动化封装脚本
 # 支持自动创建连接、登录和断开连接
 
@@ -53,38 +57,33 @@ cleanup_connections() {
     # 使用 expect 来自动化交互
     expect << EOF
 set timeout 10
-spawn $UNIVPN_CLIENT
+spawn sudo $UNIVPN_CLIENT
 
 # 等待主菜单
 expect "Welcome to UniVPN!"
 
-# 循环删除所有现有连接
+# 持续删除连接，直到没有连接为止
 while {1} {
+    # 查找第一个可用的连接（总是选择3，因为删除后编号会重新排列）
     expect {
-        "Welcome to UniVPN!" {
-            # 查找连接列表中的数字（连接ID）
-            expect {
-                -re {([0-9]+):[^0-9\n]*\n} {
-                    set connection_id $expect_out(1,string)
-                    if {$connection_id > 2} {
-                        # 选择连接
-                        send "$connection_id\r"
-                        expect "1:Connect"
-                        # 选择删除
-                        send "2\r"
-                        expect "Are you sure you want to delete"
-                        # 确认删除
-                        send "1\r"
-                        expect "Welcome to UniVPN!"
-                        continue
-                    }
-                }
-                "2:Exit" {
-                    # 没有更多连接，退出
-                    send "2\r"
-                    break
-                }
-            }
+        -re {3:[^\r\n]*} {
+            # 找到连接3，选择它
+            send "3\r"
+            expect "1:Connect"
+            # 选择删除
+            send "2\r"
+            expect "Are you sure you want to delete"
+            # 确认删除
+            send "1\r"
+            # 等待返回主菜单
+            expect "Welcome to UniVPN!"
+            # 继续查找下一个连接
+            continue
+        }
+        -re {<Connection Name List>[\r\n]+\-+} {
+            # 没有找到连接3，说明没有连接了
+            send "2\r"
+            break
         }
         timeout {
             send "2\r"
@@ -109,7 +108,7 @@ create_connection() {
     
     expect << EOF
 set timeout 30
-spawn $UNIVPN_CLIENT
+spawn sudo $UNIVPN_CLIENT
 
 # 等待主菜单
 expect "Welcome to UniVPN!"
@@ -126,6 +125,19 @@ expect "1:Connection Name"
 send "1\r"
 expect "Please Input Connection Name"
 send "$CONNECTION_NAME\r"
+expect {
+    "SSL Configuration" {
+        # 连接名称输入成功
+    }
+    "Save error" {
+        puts "Connection name save error - trying simpler name"
+        exit 1
+    }
+    timeout {
+        puts "Timeout waiting for connection name input"
+        exit 1
+    }
+}
 
 # 输入网关地址
 expect "3:Gateway Address"
@@ -145,8 +157,25 @@ if {"$port" != "443"} {
 expect "7:Save"
 send "7\r"
 
-# 等待返回主菜单
-expect "Welcome to UniVPN!"
+# 等待保存结果
+expect {
+    "Welcome to UniVPN!" {
+        # 保存成功，返回主菜单
+        puts "Connection configuration saved successfully"
+    }
+    "Save error" {
+        puts "Configuration save error"
+        exit 1
+    }
+    "Error" {
+        puts "Configuration error occurred"
+        exit 1
+    }
+    timeout {
+        puts "Timeout waiting for save confirmation"
+        exit 1
+    }
+}
 
 # 退出
 send "2\r"
@@ -171,8 +200,11 @@ connect_vpn() {
     
     # 在后台启动 UniVPN 连接
     expect << EOF &
+# 设置编码支持中文
+set env(LANG) C.UTF-8
+set env(LC_ALL) C.UTF-8
 set timeout 60
-spawn $UNIVPN_CLIENT
+spawn sudo $UNIVPN_CLIENT
 
 # 等待主菜单并查找我们的连接
 expect "Welcome to UniVPN!"
@@ -193,30 +225,15 @@ expect {
 expect "1:Connect"
 send "1\r"
 
-# 等待用户名提示
-expect {
-    "Please input the login user name" {
-        send "$username\r"
-    }
-    "Connect success." {
-        send "$username\r"
-    }
-    timeout {
-        puts "Username prompt not found"
-        exit 1
-    }
-}
+# 等待用户名提示 - 精确匹配
+expect "Please input the login user name"
+sleep 1
+send "$username\r"
 
-# 等待密码提示
-expect {
-    "Please input the login user password" {
-        send "$password\r"
-    }
-    timeout {
-        puts "Password prompt not found"
-        exit 1
-    }
-}
+# 等待密码提示 - 精确匹配  
+expect "Please input the login user password"
+sleep 1
+send "$password\r"
 
 # 等待连接成功
 expect {

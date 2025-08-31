@@ -31,10 +31,19 @@ if /app/univpn-wrapper.sh connect "$UNIVPN_SERVER" "$UNIVPN_USERNAME" "$UNIVPN_P
         
         # 显示网络信息
         echo "Network interfaces:"
-        ip addr show | grep -E "inet.*tun|inet.*ppp|inet.*vpn" || echo "No VPN interfaces found yet"
+        ip addr show | grep -E "inet.*(tun|ppp|vpn|cnem_vnic|vnic)" || echo "No VPN interfaces found yet"
+        
+        # 显示 VPN 接口详情
+        if ip addr show | grep -q "cnem_vnic"; then
+            echo "UniVPN interface details:"
+            ip addr show cnem_vnic
+        fi
         
         echo "Routing table:"
         ip route | head -10
+        
+        echo "Current IP address:"
+        curl -s --max-time 10 https://ipinfo.io/ip || echo "Could not determine external IP"
         
         return 0
     else
