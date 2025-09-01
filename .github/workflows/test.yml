@@ -76,22 +76,43 @@ jobs:
         --privileged
     
     steps:
+      - name: Connect to VPN
+        run: |
+          echo "Establishing VPN connection..."
+          /app/connect-vpn.sh
+          
       - name: Test VPN connectivity
         run: |
           echo "Testing network connectivity through VPN..."
-          curl -s --max-time 10 https://ipinfo.io/ip || echo "External IP check failed"
+          echo "IP before VPN should be GitHub runner IP, after VPN should be VPN server IP"
+          CURRENT_IP=$(curl -s --max-time 10 https://ipinfo.io/ip || echo "unknown")
+          echo "Current IP: $CURRENT_IP"
           ping -c 3 8.8.8.8 || echo "Ping test failed"
       
       - name: Test VPN wrapper commands
         run: |
           echo "Testing VPN wrapper status..."
-          /app/univpn-wrapper.sh status || echo "Status check completed"
+          VPN_STATUS=$(/app/univpn-wrapper.sh status)
+          echo "VPN Status: $VPN_STATUS"
+          if [ "$VPN_STATUS" = "connected" ]; then
+            echo "✅ VPN is properly connected"
+          else
+            echo "❌ VPN connection failed"
+            exit 1
+          fi
       
       - name: Test network environment
         run: |
           echo "Testing network environment..."
           ip route | head -5
           echo "Container networking is working!"
+      
+      - name: Disconnect VPN
+        if: always()
+        run: |
+          echo "Disconnecting VPN..."
+          /app/univpn-wrapper.sh disconnect || echo "Disconnect completed"
+          echo "VPN disconnected"
 
   security-scan:
     runs-on: ubuntu-latest
@@ -107,6 +128,6 @@ jobs:
           output: 'trivy-results.sarif'
       
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'

@@ -36,12 +36,11 @@ COPY bin /app/bin
 RUN chmod +x /app/bin/univpn-linux-*.run && sudo /app/bin/univpn-linux-*.run
 
 # 复制启动脚本（在用户创建之后，切换之前）
-COPY entrypoint.sh /app/entrypoint.sh
 COPY connect-vpn.sh /app/connect-vpn.sh
 COPY univpn-wrapper.sh /app/univpn-wrapper.sh
 
 # 设置脚本权限
-RUN chmod +x /app/entrypoint.sh /app/connect-vpn.sh /app/univpn-wrapper.sh
+RUN chmod +x /app/connect-vpn.sh /app/univpn-wrapper.sh
 
 # 默认使用 job container 模式
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["/bin/bash"]
