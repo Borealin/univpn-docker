@@ -1,0 +1,21 @@
+name: 'UniVPN Cleanup Action'
+description: 'Cleanup UniVPN connection in GitHub Actions'
+author: 'borealin'
+
+branding:
+  icon: 'x-circle'
+  color: 'red'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Cleanup VPN Connection
+      shell: bash
+      run: |
+        echo "🧹 Cleaning up UniVPN connection..."
+        if [ "$VPN_CLEANUP_NEEDED" = "true" ]; then
+          /app/univpn-wrapper.sh disconnect || echo "VPN disconnect completed with warnings"
+          echo "✅ VPN cleanup completed"
+        else
+          echo "ℹ️  No VPN cleanup needed"
+        fi

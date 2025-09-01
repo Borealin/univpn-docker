@@ -13,7 +13,54 @@
 
 ## 使用方法
 
-### 作为 Job Container（推荐）
+### 方式一：使用 GitHub Action（推荐）
+
+```yaml
+name: Test with UniVPN
+on: [push]
+
+jobs:
+  test-with-vpn:
+    runs-on: ubuntu-latest
+    container:
+      image: borealin/univpn-docker:latest
+      options: --privileged
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup UniVPN Connection
+        uses: ./  # 如果在同一仓库，或使用 borealin/univpn-docker@main
+        with:
+          server: ${{ secrets.UNIVPN_SERVER }}
+          username: ${{ secrets.UNIVPN_USERNAME }}
+          password: ${{ secrets.UNIVPN_PASSWORD }}
+          port: ${{ secrets.UNIVPN_PORT || '443' }}
+      
+      - name: Test VPN connectivity
+        run: |
+          echo "Testing connectivity through VPN..."
+          curl -s https://ipinfo.io/ip
+          ping -c 3 internal.company.com
+      
+      - name: Run your tests
+        run: |
+          # 所有命令都通过 VPN 网络执行
+          npm install
+          npm test
+      
+      - name: Deploy to internal server
+        run: |
+          # 部署到内网服务器
+          scp ./dist/* user@internal.server:/var/www/
+      
+      - name: Cleanup VPN Connection
+        if: always()
+        uses: ./cleanup-action.yml  # 或使用 borealin/univpn-docker/cleanup-action@main
+```
+
+### 方式二：作为 Job Container（手动连接）
 
 ```yaml
 name: Test with UniVPN
@@ -24,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     # 使用 UniVPN Docker 镜像作为 job container
     container:
-      image: your-username/univpn-docker:latest
+      image: borealin/univpn-docker:latest
       env:
         UNIVPN_SERVER: ${{ secrets.UNIVPN_SERVER }}
         UNIVPN_USERNAME: ${{ secrets.UNIVPN_USERNAME }}
@@ -32,12 +79,20 @@ jobs:
         UNIVPN_PORT: ${{ secrets.UNIVPN_PORT || '443' }}
       options: >-
         --privileged
-        --cap-add=NET_ADMIN
-        --cap-add=SYS_MODULE
-        --device=/dev/net/tun
-        --sysctl net.ipv6.conf.all.disable_ipv6=0
     
     steps:
+      - name: Setup VPN Connection
+        run: |
+          echo "Establishing VPN connection..."
+          # 由于 container 模式会覆盖 ENTRYPOINT，需要手动启动 VPN 连接
+          if /app/univpn-wrapper.sh connect "$UNIVPN_SERVER" "$UNIVPN_USERNAME" "$UNIVPN_PASSWORD" "$UNIVPN_PORT"; then
+            echo "VPN connection established successfully"
+            curl -s --max-time 10 https://ipinfo.io/ip
+          else
+            echo "Failed to establish VPN connection"
+            exit 1
+          fi
+      
       - name: Checkout code
         uses: actions/checkout@v4
       
@@ -57,23 +112,34 @@ jobs:
         run: |
           # 部署到内网服务器
           scp ./dist/* user@internal.server:/var/www/
+      
+      - name: Cleanup VPN Connection
+        if: always()
+        run: |
+          echo "Cleaning up VPN connection..."
+          /app/univpn-wrapper.sh disconnect || echo "VPN disconnect completed"
 ```
 
-### 直接运行 Docker 容器
+### 方式三：直接运行 Docker 容器
 
 ```bash
-# 本地测试
+# 本地测试（自动连接）
 docker run --rm -it \
   --privileged \
-  --cap-add=NET_ADMIN \
-  --cap-add=SYS_MODULE \
-  --device=/dev/net/tun \
-  --sysctl net.ipv6.conf.all.disable_ipv6=0 \
   -e UNIVPN_SERVER=vpn.example.com \
   -e UNIVPN_USERNAME=myuser \
   -e UNIVPN_PASSWORD=mypass \
   -e UNIVPN_PORT=9999 \
-  your-username/univpn-docker:latest
+  borealin/univpn-docker:latest
+
+# 手动连接模式
+docker run --rm -it --privileged \
+  -e UNIVPN_SERVER=vpn.example.com \
+  -e UNIVPN_USERNAME=myuser \
+  -e UNIVPN_PASSWORD=mypass \
+  -e UNIVPN_PORT=9999 \
+  borealin/univpn-docker:latest \
+  bash -c "/app/univpn-wrapper.sh connect \$UNIVPN_SERVER \$UNIVPN_USERNAME \$UNIVPN_PASSWORD \$UNIVPN_PORT && bash"
 
 # 在容器内执行命令
 docker exec -it <container_id> bash
@@ -183,38 +249,58 @@ curl https://ipinfo.io/ip
 
 ### 常见问题
 
-1. **UniVPN 安装包未找到**
+1. **Container 模式下 VPN 未自动连接**
+   ```
+   VPN connection not established automatically in job container
+   ```
+   **原因**：GitHub Actions 的 `container:` 模式会覆盖 Docker 的 `ENTRYPOINT`，导致自动连接脚本无法运行。
+   
+   **解决方案**：
+   - **推荐**：使用提供的 GitHub Action（方式一）
+   - **手动**：在第一个 step 中手动调用连接脚本（方式二）
+   - **确保清理**：使用 `if: always()` 条件确保 VPN 连接在作业结束时被正确断开
+
+2. **UniVPN 安装包未找到**
    ```
    Error: UniVPN client not found at /usr/local/UniVPN/serviceclient/UniVPNCS
    ```
    解决方案：确保 UniVPN 安装包（.run 文件）正确放置在 `bin/` 目录下
 
-2. **网络扩展失败**
+3. **网络扩展失败**
    ```
    Failed to enable network extension
    ```
-   解决方案：确保运行时包含所有必需的权限和设备：
+   解决方案：确保运行时包含所有必需的权限：
    ```bash
-   docker run \
-     --privileged \
-     --cap-add=NET_ADMIN \
-     --cap-add=SYS_MODULE \
-     --device=/dev/net/tun \
-     --sysctl net.ipv6.conf.all.disable_ipv6=0 \
-     your-image
+   # GitHub Actions
+   options: --privileged
+   
+   # Docker 命令行
+   docker run --privileged your-image
    ```
 
-3. **连接超时**
+4. **连接超时**
    ```
    Timeout waiting for VPN connection
    ```
    解决方案：增加 `timeout` 参数值或检查服务器配置
 
-4. **认证失败**
+5. **认证失败**
    ```
    Failed to establish VPN connection
    ```
    解决方案：检查用户名、密码和服务器地址是否正确
+
+6. **VPN 连接未正确清理**
+   ```
+   VPN connection still active after job completion
+   ```
+   解决方案：确保在 workflow 中添加清理步骤：
+   ```yaml
+   - name: Cleanup VPN Connection
+     if: always()
+     run: /app/univpn-wrapper.sh disconnect || echo "Cleanup completed"
+   ```
 
 ### 调试模式
 

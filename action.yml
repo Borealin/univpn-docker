@@ -1,0 +1,80 @@
+name: 'UniVPN Docker Action'
+description: 'Setup UniVPN connection in GitHub Actions using Docker container'
+author: 'borealin'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  server:
+    description: 'UniVPN server address'
+    required: true
+  username:
+    description: 'UniVPN username'
+    required: true
+  password:
+    description: 'UniVPN password'
+    required: true
+  port:
+    description: 'UniVPN server port'
+    required: false
+    default: '443'
+  timeout:
+    description: 'Connection timeout in seconds'
+    required: false
+    default: '60'
+
+outputs:
+  vpn-ip:
+    description: 'VPN IP address assigned to the connection'
+    value: ${{ steps.connect.outputs.vpn-ip }}
+  status:
+    description: 'VPN connection status'
+    value: ${{ steps.connect.outputs.status }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup VPN Connection
+      id: connect
+      shell: bash
+      run: |
+        echo "🔌 Establishing UniVPN connection..."
+        echo "Server: ${{ inputs.server }}:${{ inputs.port }}"
+        echo "Username: ${{ inputs.username }}"
+        
+        # 连接 VPN
+        if /app/univpn-wrapper.sh connect "${{ inputs.server }}" "${{ inputs.username }}" "${{ inputs.password }}" "${{ inputs.port }}"; then
+          echo "✅ VPN connection established successfully"
+          
+          # 获取 VPN IP 地址
+          VPN_IP=$(ip addr show cnem_vnic 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d'/' -f1 || echo "unknown")
+          echo "vpn-ip=$VPN_IP" >> $GITHUB_OUTPUT
+          echo "status=connected" >> $GITHUB_OUTPUT
+          
+          # 显示网络信息
+          echo "📡 Network interfaces:"
+          ip addr show | grep -E "inet.*(tun|ppp|vpn|cnem_vnic|vnic)" || echo "No VPN interfaces found yet"
+          
+          # 显示当前 IP
+          echo "🌍 Current external IP:"
+          EXTERNAL_IP=$(curl -s --max-time 10 https://ipinfo.io/ip || echo "unknown")
+          echo "External IP: $EXTERNAL_IP"
+          
+          # 设置清理陷阱
+          echo "Setting up cleanup trap..."
+          trap '/app/univpn-wrapper.sh disconnect || true' EXIT
+          
+        else
+          echo "❌ Failed to establish VPN connection"
+          echo "status=failed" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+    
+    - name: Register cleanup
+      shell: bash
+      run: |
+        echo "📝 VPN connection registered. Will cleanup on job completion."
+        # 注册一个后续清理步骤的标记
+        echo "VPN_CLEANUP_NEEDED=true" >> $GITHUB_ENV

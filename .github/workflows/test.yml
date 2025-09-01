@@ -76,6 +76,25 @@ jobs:
         --privileged
     
     steps:
+      - name: Setup VPN Connection
+        run: |
+          echo "Establishing VPN connection..."
+          # 由于 container 模式会覆盖 ENTRYPOINT，需要手动启动 VPN 连接
+          if /app/univpn-wrapper.sh connect "$UNIVPN_SERVER" "$UNIVPN_USERNAME" "$UNIVPN_PASSWORD" "$UNIVPN_PORT"; then
+            echo "VPN connection established successfully"
+            
+            # 显示网络信息
+            echo "Network interfaces:"
+            ip addr show | grep -E "inet.*(tun|ppp|vpn|cnem_vnic|vnic)" || echo "No VPN interfaces found yet"
+            
+            # 获取当前 IP
+            echo "Current IP address:"
+            curl -s --max-time 10 https://ipinfo.io/ip || echo "Could not determine external IP"
+          else
+            echo "Failed to establish VPN connection"
+            exit 1
+          fi
+      
       - name: Test VPN connectivity
         run: |
           echo "Testing network connectivity through VPN..."
@@ -92,6 +111,12 @@ jobs:
           echo "Testing network environment..."
           ip route | head -5
           echo "Container networking is working!"
+      
+      - name: Cleanup VPN Connection
+        if: always()
+        run: |
+          echo "Cleaning up VPN connection..."
+          /app/univpn-wrapper.sh disconnect || echo "VPN disconnect completed"
 
   security-scan:
     runs-on: ubuntu-latest
@@ -107,6 +132,6 @@ jobs:
           output: 'trivy-results.sarif'
       
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
