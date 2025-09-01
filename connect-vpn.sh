@@ -45,12 +45,12 @@ if /app/univpn-wrapper.sh connect "$UNIVPN_SERVER" "$UNIVPN_USERNAME" "$UNIVPN_P
         echo "Current IP address:"
         curl -s --max-time 10 https://ipinfo.io/ip || echo "Could not determine external IP"
         
-        return 0
+        exit 0
     else
         echo "Warning: VPN status check failed"
-        return 1
+        exit 1
     fi
 else
     echo "Failed to establish VPN connection"
-    return 1
+    exit 1
 fi
