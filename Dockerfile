@@ -21,6 +21,8 @@ RUN apt-get update && apt-get install -y \
     locales \
     kmod \
     udev \
+    git \
+    git-lfs \
     && rm -rf /var/lib/apt/lists/*
 
 # 生成 UTF-8 locale
