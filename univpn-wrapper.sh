@@ -206,6 +206,13 @@ set env(LC_ALL) C.UTF-8
 set timeout 60
 spawn sudo $UNIVPN_CLIENT
 
+# 设置信号处理，当收到 SIGTERM 时发送 q 并退出
+trap {
+    send "q\r"
+    expect eof
+    exit 0
+} SIGTERM
+
 # 等待主菜单并查找我们的连接
 expect "Welcome to UniVPN!"
 
@@ -239,12 +246,11 @@ send "$password\r"
 expect {
     "Connect Success,Enjoy!" {
         puts "VPN connected successfully"
-        # 保持连接，等待断开信号
+        # 保持连接，等待断开信号或用户输入
         expect "q:Disconnect"
-        # 这里不发送 q，保持连接状态
-        # 等待外部信号来断开连接
-        while {1} {
-            sleep 1
+        # 使用 interact 保持连接状态，但仍然响应信号
+        interact {
+            # 不做任何事，只是保持活跃状态等待信号
         }
     }
     "login failed" {
@@ -282,14 +288,22 @@ disconnect_vpn() {
     if [ -f "$UNIVPN_PID_FILE" ]; then
         local pid=$(cat "$UNIVPN_PID_FILE")
         if kill -0 $pid 2>/dev/null; then
-            # 发送 q 命令断开连接
-            echo "q" | kill -PIPE $pid 2>/dev/null || true
-            sleep 2
-            
-            # 强制终止进程
+            # 发送 SIGTERM 信号，触发 expect 脚本的 trap 处理器
+            # trap 处理器会自动发送 'q' 命令并优雅退出
             kill -TERM $pid 2>/dev/null || true
-            sleep 2
-            kill -KILL $pid 2>/dev/null || true
+            
+            # 等待进程优雅退出
+            local count=0
+            while kill -0 $pid 2>/dev/null && [ $count -lt 10 ]; do
+                sleep 1
+                count=$((count + 1))
+            done
+            
+            # 如果进程仍然存在，强制终止
+            if kill -0 $pid 2>/dev/null; then
+                warn "Process did not exit gracefully, forcing termination"
+                kill -KILL $pid 2>/dev/null || true
+            fi
             
             log "VPN disconnected"
         else
